@@ -1,0 +1,19 @@
+{
+    "nick" : "chatbot",
+    "realname" : "Charles Q. Chatbot",
+    "owners" : [ "you" ],
+    "readonly" : false,
+    "seendb" : "seendb",
+    "p_reply" : 0.1,
+    "markovdb" : "chatbot_markovdb",
+    "save_period" : 100,
+
+    "slack_oauth_token" : "YOUR TOKEN HERE",
+    "slack_user_oauth_token" : "YOUR USER TOKEN HERE",
+    "slack_ rtm_read_delay" : 0.5,
+
+    "irc_host" : "irc.perl.org",
+    "irc_port": 6667,
+    "irc_channels" : "#testing",
+    "irc_ignore" : []
+}

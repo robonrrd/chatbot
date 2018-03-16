@@ -9,6 +9,8 @@ import signal
 import time
 import os
 import shutil
+import json
+
 
 from threading import Timer, RLock
 
@@ -23,35 +25,61 @@ from colortext import *
 
 
 class Bot(object):
-    def __init__(self, args):
-        self.NICK = args.nick
-        self.REALNAME = args.realname
-        self.OWNERS = [string.strip(owner) for owner in args.owners.split(",")]
-        self.READONLY = args.readonly
+    def __init__(self):
+        self.NICK = None
+        self.REALNAME = None
+        self.OWNERS = None
+        self.READONLY = False
 
         # Caches of status
         self.seen = {} # lists of who said what when
         # Set up a lock for the seen db
         self.seendb_lock = RLock()
-        self.SEENDB = args.seendb
+        self.SEENDB = None
 
         # Markov chain settings
-        p = float(args.p)
-        if p < 0:
-            p = 0
-        elif p > 1:
-            p = 1
-        self.p_reply = p
-        self.MARKOVDB = args.markovdb
+        self.p_reply = 0.1
+        self.MARKOVDB = None
 
         # Regular db saves
-        self.SAVE_PERIOD = float(args.save_period)
+        self.SAVE_PERIOD = 100
         self.save_count = 0
+
+        # Commands
+        self.commands = {}
 
         # signal handling
         signal.signal(signal.SIGINT, self.signalHandler)
         signal.signal(signal.SIGTERM, self.signalHandler)
         signal.signal(signal.SIGQUIT, self.signalHandler)
+
+
+    def initialize(self, configFile):
+        with open(configFile) as json_data_file:
+            args = json.load(json_data_file)
+        
+        self.NICK = args.get("nick", "chatbot")
+        self.REALNAME = args.get("realname", "Arthur J. Chatbot")
+        if "owners" in args:
+            self.OWNERS = args.get("owners", [])
+        else:
+            self.OWNERS = [None]
+        self.READONLY = args.get("readonly", False)
+        self.SEENDB = args.get("seendb", "seendb")
+
+        # Markov chain settings
+        pstr = args.get("p_reply", "0.1")
+        p = float(pstr)
+        if p < 0:
+            p = 0
+        elif p > 1:
+            p = 1
+        self.p_reply = p
+        self.MARKOVDB = args.get("markovdb", "chatbot_markovdb")
+
+        # Regular db saves
+        self.SAVE_PERIOD = int(args.get("save_period", 100))
+        self.save_count = 0
 
 
     @staticmethod
@@ -78,7 +106,7 @@ class Bot(object):
     def logMessage(speaker, msg):
         logging.debug(CYAN + speaker + PLAIN + " : " + BLUE + msg)
 
-        
+
     def signalHandler(self, unused_signal, unused_frame):
         self.quit()
 
@@ -106,7 +134,7 @@ class Bot(object):
             return None
 
         # If we have a reply, randomly determine if we reply with it
-        if random.random() < msg["p_reply"]:
+        if random.random() > msg["p_reply"]:
             return None
 
         # generate a response
@@ -138,10 +166,9 @@ class Bot(object):
             dst = source + ".bak"
             shutil.copyfile(source, dst)
 
-
             
     def saveMarkovDatabase(self):
-        print "Saving database"
+        print "Saving Markov chain database"
         self.createBackup(self.MARKOVDB)
         if self.READONLY:
             logging.info('Skipping markov db because we are read-only')
@@ -158,12 +185,100 @@ class Bot(object):
                 self.saveMarkovDatabase()
                 self.save_count = 0
 
-                
+
+    def recordSeen(self, name, text):
+        with self.seendb_lock:
+            self.seen[name] = [time.time(), text]
+
+
+    @staticmethod
+    def elapsedTime(ss):
+        reply = ""
+        startss = ss
+        if ss > 31557600:
+            years = ss // 31557600
+            reply = reply + ("%g years " % years)
+            ss = ss - years*31557600
+
+        if ss > 2678400: # 31 days
+            months = ss // 2678400
+            reply = reply + ("%g months " % months)
+            ss = ss - months*2678400
+
+        if ss > 604800:
+            weeks = ss // 604800
+            reply = reply + ("%g weeks " % weeks)
+            ss = ss - weeks*604800
+
+        if ss > 86400:
+            days = ss // 86400
+            reply = reply + ("%g days " % days)
+            ss = ss - days*86400
+
+        if ss > 3600:
+            hours = ss // 3600
+            reply = reply + ("%g hours " % hours)
+            ss = ss - hours*3600
+
+        if ss > 60:
+            minutes = ss // 60
+            reply = reply + ("%g minutes " % minutes)
+            ss = ss - minutes*60
+
+
+    def hasBeenSeen(self, name):
+        with self.seendb_lock:
+            if name in self.seen:
+                last_seen = self.seen[name][0] # in seconds since epoch
+                since = self.elapsedTime(time.time() - last_seen)
+                return (True, self.seen[name], since)
+            else:
+                return (False, None, None)
+
+
+    def loadSeenDatabse(self):
+        with self.seendb_lock:
+            try:
+                with open(self.SEENDB, 'rb') as seendb:
+                    self.seen = pickle.load(seendb)
+            except IOError:
+                logging.error(WARNING +
+                              ("Unable to open seen db '%s' for reading" %
+                               self.SEENDB))
+
+    def saveSeenDatabase(self):
+        print "Saving 'seen' database"
+        with self.seendb_lock:
+            try:
+                with open(self.SEENDB, 'wb') as seendb:
+                    pickle.dump(self.seen, seendb)
+            except IOError:
+                logging.error(ERROR +
+                              ("Unable to open seed db '%s' for writing" %
+                               self.SEENDB))
+
+
+    def registerCommands(self):
+        return
+
+
+    def handleCommand(self, text):
+        words = self.preprocessText(text).split()
+        try:
+            return self.commands[words[0]](' '.join(words[1:]))
+        except:
+            print "No function called '"+words[0]+"' found"
+            return False
+
+
+
     def run(self):
         self.loadMarkovChain()
+        self.loadSeenDatabse()
         # do nothing
 
         
     def quit(self):
         self.saveMarkovDatabase()
+        self.saveSeenDatabase()
         sys.exit(0)

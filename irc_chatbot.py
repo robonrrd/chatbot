@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 from colortext import *
 import logging
-import argparse
 import base_chatbot
 import irc
 import string
@@ -25,10 +24,23 @@ class IRCBot(base_chatbot.Bot):
         # IRC specific variables and settings
         self.IDENT='pybot'
         self.irc = None
-        self.HOST = args.host
-        self.PORT = args.port
-        self.CHANNELINIT = [string.strip(channel) for channel in args.channels.split(",")]
-        self.IGNORE = [string.strip(ignore) for ignore in args.ignore.split(",")]
+        self.HOST = None
+        self.PORT = None
+        self.CHANNELINIT = None
+        self.IGNORE = None
+
+    def initialize(self, configFile):
+        super(IRCBot,self).initialize(configFile)
+
+        # IRC specific arguments
+        with open(configFile) as json_data_file:
+            args = json.load(json_data_file)
+
+        self.HOST = args.get("irc_host", "irc.perl.org")
+        self.PORT = int(args.get("irc_port", 6667))
+        self.CHANNELINIT = args.get("irc_channels", ["#testing"])
+        self.IGNORE = args.get("irc_ignore", [])
+
 
     @staticmethod
     def logChannel(speaker, msg):
@@ -242,23 +254,13 @@ class IRCBot(base_chatbot.Bot):
 #####
 
 if __name__ == "__main__":
+    bot = IRCBot()
 
-    PARSER = argparse.ArgumentParser(description='A snarky IRC bot.')
-    PARSER.add_argument("--host", help="The server to connect to", default="irc.perl.org")
-    PARSER.add_argument("--port", type=int, help="The connection port", default=6667)
-    PARSER.add_argument("--nick", help="The bot's nickname", default="chatbot")
-    PARSER.add_argument("--realname", help="The bot's real name", default="Python chatbot")
-    PARSER.add_argument("--channels", help="The list of channels to join", default="#testing")
-    PARSER.add_argument("--ignore", help="The optional list of nicks to ignore", default="")
-    PARSER.add_argument("--owners", help="The list of owner nicks", default="")
-    PARSER.add_argument("--save_period", help="How often (# of changes) to save databases", default=100)
-    PARSER.add_argument("--seendb", help="Path to seendb", default="./seendb.pkl")
-    PARSER.add_argument("--markovdb", help="Path to markovdb", default="./chatbotdb")
-    PARSER.add_argument("--p", help="Probability (0..1) to reply", default="0.1")
-    PARSER.add_argument("--readonly", help="The bot will not learn from other users, only reply to them", dest='readonly', action='store_true')
-    PARSER.set_defaults(readonly=False)
+    if len(sys.argv) > 1:
+        config_file = sys.argv[1]
+        print "Reading configuration from", config_file
+        bot.initialize(config_file)
 
-    bot = IRCBot(PARSER.parse_args())
     bot.run()
     bot.quit()
 

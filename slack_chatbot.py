@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 from colortext import *
 import logging
-import argparse
 import base_chatbot
 import string
 import random
@@ -12,29 +11,43 @@ import sys
 import time
 import os
 import shutil
+import json
 from slackclient import SlackClient
 
 
 class SlackBot(base_chatbot.Bot):
         
-    def __init__(self, args):
-        super(SlackBot, self).__init__(args)
+    def __init__(self):
+        super(SlackBot, self).__init__()
 
         # Slack specific variables and settings
         self.slackClient = None
 
-        self.OAUTH_ACCESS_TOKEN = "YOUR_TOKEN_HERE"
-        self.BOT_USER_OAUTH_ACCESS_TOKEN = "YOUR_USER_TOKEN_HERE"
+        self.OAUTH_ACCESS_TOKEN = None
+        self.BOT_USER_OAUTH_ACCESS_TOKEN = None
 
         # starterbot's user ID in Slack: value is assigned after the bot starts up
         self.USERID = None
-        self.BOT_NAME = "chatbot"
 
         # constants
         self.RTM_READ_DELAY = 0.5 # 0.5 second delay between reading from RTM
 
         self.USERMAP = {}
         self.CHANNELMAP = {}
+
+    def initialize(self, configFile):
+        super(SlackBot,self).initialize(configFile)
+
+        # slack specific arguments
+        with open(configFile) as json_data_file:
+            args = json.load(json_data_file)
+
+
+        self.OAUTH_ACCESS_TOKEN = args.get("slack_oauth_token", None)
+        self.BOT_USER_OAUTH_ACCESS_TOKEN = args.get("slack_user_oauth_token", None)
+
+        # constants
+        self.RTM_READ_DELAY = float( args.get("slack_rtm_read_delay", 0.5) )
 
 
     # Join the Slack network
@@ -74,8 +87,11 @@ class SlackBot(base_chatbot.Bot):
         else:
             result = self.SLACKCLIENT.api_call("channels.info", channel=channel_id)
             if result["ok"] is False:
-                print "Could not detemine real channel name for ", channel_id
-                return None
+                # Maybe we are being directly messaged
+                result = self.nickFromUserId(channel_id)
+                if result["ok"] is False:
+                    print "Could not detemine real channel name for ", channel_id
+                    return None
 
             channel = result["channel"]["name"]
             self.CHANNELMAP[channel_id] = channel
@@ -102,7 +118,7 @@ class SlackBot(base_chatbot.Bot):
             text = matches.group(1)+nick+matches.group(3)
             matches = re.search(MENTION_REGEX, text)
         return text
-
+   
 
     def parseMessage(self, event):
         speaker = self.nickFromUserId(event["user"])
@@ -120,28 +136,32 @@ class SlackBot(base_chatbot.Bot):
             if self.containsURL(line):
                 continue
 
+            self.recordSeen(speaker, line)
+
             # Start creating a msg dict to pass to the markov chain
             msg = {}
             msg["p_reply"] = self.p_reply
+
+            text = line
 
             # Detect and trim off any leading direct adresses (i.e. "@foo, how are you?")
             direct, txt = self.amDirectlyAddressed(line)
             if direct is not None:
                 text = txt
                 # If we are directly addressed, then probability of our reponse should be 1
-                if direct == self.BOT_NAME:
+                if direct == self.NICK:
+                    # If this was a command, e.g. "chatbot, seen jane?" we
+                    # execute it and return. We don't want to 'learn' commands
+                    cmd_text = self.resolveUserIds(text)
+                    if self.handleCommand(cmd_text):
+                        return
+                    # otherwise, we set a 100% chance to reply
                     msg["p_reply"] = 1.0
-                else:
-                    text = line
-            else:
-                text = line
 
             text = self.resolveUserIds(text)
             text = self.preprocessText(text)
             if len(text) == 0:
                 continue
-
-            print "Heard:",text
 
             msg["text"] = text
             msg["speaker"] = speaker
@@ -171,8 +191,31 @@ class SlackBot(base_chatbot.Bot):
                 self.parseMessage(event)
 
 
+
+    def registerCommands(self):
+        super(SlackBot, self).registerCommands()
+
+        self.commands.update({'seen' : self._cmd_seen})
+        return
+
+
+    def _cmd_seen(self, text):
+        words = self.preprocessText(text).split()
+        (hasBeenSeen, whatSaid, howLong) = self.hasBeenSeen(words[0])
+        reply = ""
+        if not hasBeenSeen:
+            reply = "I haven't seen", nick
+        else:
+            reply = nick,"was last seen", howLong, "ago, when they said'", whatSaid,"'"
+
+        self.SLACKCLIENT.api_call("chat.postMessage",
+                                  channel=msg["channel"],
+                                  text=reply)
+        return True
+
     def run(self):
         super(SlackBot, self).run()
+        self.registerCommands()
         self.joinSlack()
 
         while True:
@@ -187,21 +230,12 @@ class SlackBot(base_chatbot.Bot):
 #####
 
 if __name__ == "__main__":
+    bot = SlackBot()
+    if len(sys.argv) > 1:
+        config_file = sys.argv[1]
+        print "Reading configuration from", config_file
+        bot.initialize(config_file)
 
-    PARSER = argparse.ArgumentParser(description='A snarky slack bot.')
-    PARSER.add_argument("--nick", help="The bot's nickname", default="chatbot")
-    PARSER.add_argument("--realname", help="The bot's real name", default="Python chatbot")
-    PARSER.add_argument("--channels", help="The list of channels to join", default="#testing")
-    PARSER.add_argument("--ignore", help="The optional list of nicks to ignore", default="")
-    PARSER.add_argument("--owners", help="The list of owner nicks", default="")
-    PARSER.add_argument("--save_period", help="How often (# of changes) to save databases", default=100)
-    PARSER.add_argument("--seendb", help="Path to seendb", default="./seendb.pkl")
-    PARSER.add_argument("--markovdb", help="Path to markovdb", default="./chatbotdb")
-    PARSER.add_argument("--p", help="Probability (0..1) to reply", default="0.1")
-    PARSER.add_argument("--readonly", help="The bot will not learn from other users, only reply to them", dest='readonly', action='store_true')
-    PARSER.set_defaults(readonly=False)
-
-    bot = SlackBot(PARSER.parse_args())
     bot.run()
     bot.quit()
 
