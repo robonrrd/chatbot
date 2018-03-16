@@ -5,6 +5,33 @@ import base_chatbot
 
 class ConsoleBot(base_chatbot.Bot):
         
+
+    def initialize(self, configFile):
+        super(ConsoleBot,self).initialize(configFile)
+        self.registerCommands()
+
+
+    def registerCommands(self):
+        super(ConsoleBot, self).registerCommands()
+
+        print "Registering 'test'"
+        self.commands.update({'test' : self._cmd_test})
+        return
+
+
+    def _cmd_test(self, text):
+        print "Test command"
+        return True
+
+
+    def amDirectlyAddressed(self, text):
+        words = self.preprocessText(text).split()
+        if words[0] == self.NICK:
+            print "Directly addressed"
+            return words[0], ' '.join(words[1:])
+        return None, None
+
+
     def run(self):
         super(ConsoleBot, self).run()
         
@@ -15,6 +42,13 @@ class ConsoleBot(base_chatbot.Bot):
             except EOFError:
                 print
                 break
+
+            direct, cmd_text = self.amDirectlyAddressed(txt)
+            if direct is not None:
+                # If we are directly addressed, then probability of our reponse should be 1
+                if direct == self.NICK:
+                    if self.handleCommand(cmd_text):
+                        continue
 
             msg = {}
             msg["text"] = txt
@@ -27,6 +61,7 @@ class ConsoleBot(base_chatbot.Bot):
                 print reply
 
             self.addPhrase(txt)
+
     
 #####
 

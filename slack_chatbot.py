@@ -49,6 +49,8 @@ class SlackBot(base_chatbot.Bot):
         # constants
         self.RTM_READ_DELAY = float( args.get("slack_rtm_read_delay", 0.5) )
 
+        self.registerCommands()
+
 
     # Join the Slack network
     def joinSlack(self):
@@ -153,7 +155,13 @@ class SlackBot(base_chatbot.Bot):
                     # If this was a command, e.g. "chatbot, seen jane?" we
                     # execute it and return. We don't want to 'learn' commands
                     cmd_text = self.resolveUserIds(text)
-                    if self.handleCommand(cmd_text):
+                    cmd_text = self.preprocessText(cmd_text)
+
+                    msg["text"] = cmd_text
+                    msg["speaker"] = speaker
+                    msg["channel"] = self.channelFromChannelId(event["channel"])
+
+                    if self.handleCommand(msg):
                         return
                     # otherwise, we set a 100% chance to reply
                     msg["p_reply"] = 1.0
@@ -191,22 +199,24 @@ class SlackBot(base_chatbot.Bot):
                 self.parseMessage(event)
 
 
-
     def registerCommands(self):
         super(SlackBot, self).registerCommands()
 
+        print "Registering 'seen' command"
         self.commands.update({'seen' : self._cmd_seen})
         return
 
 
-    def _cmd_seen(self, text):
-        words = self.preprocessText(text).split()
-        (hasBeenSeen, whatSaid, howLong) = self.hasBeenSeen(words[0])
+    def _cmd_seen(self, msg):
+        words = self.preprocessText(msg["text"]).split()
+        nick = words[1]
+        (hasBeenSeen, whatSaid, howLong) = self.hasBeenSeen(nick)
+
         reply = ""
         if not hasBeenSeen:
             reply = "I haven't seen", nick
         else:
-            reply = nick,"was last seen", howLong, "ago, when they said'", whatSaid,"'"
+            reply = nick+" was last seen "+howLong+" ago, when they said '"+whatSaid+"'"
 
         self.SLACKCLIENT.api_call("chat.postMessage",
                                   channel=msg["channel"],
@@ -215,7 +225,6 @@ class SlackBot(base_chatbot.Bot):
 
     def run(self):
         super(SlackBot, self).run()
-        self.registerCommands()
         self.joinSlack()
 
         while True:

@@ -3,9 +3,9 @@
     "realname" : "Charles Q. Chatbot",
     "owners" : [ "you" ],
     "readonly" : false,
-    "seendb" : "seendb",
+    "seendb" : "example_seendb",
     "p_reply" : 0.1,
-    "markovdb" : "chatbot_markovdb",
+    "markovdb" : "example_markovdb",
     "save_period" : 100,
 
     "slack_oauth_token" : "YOUR TOKEN HERE",

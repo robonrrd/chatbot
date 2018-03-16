@@ -95,6 +95,7 @@ class Bot(object):
 
     @staticmethod
     def preprocessText(text):
+        text = str(text)
         # remove all color codes
         text = re.sub('\x03(?:\d{1,2}(?:,\d{1,2})?)?', '', text)
         # remove non-alphanumeric characters
@@ -225,13 +226,15 @@ class Bot(object):
             reply = reply + ("%g minutes " % minutes)
             ss = ss - minutes*60
 
+        return reply
+
 
     def hasBeenSeen(self, name):
         with self.seendb_lock:
             if name in self.seen:
                 last_seen = self.seen[name][0] # in seconds since epoch
                 since = self.elapsedTime(time.time() - last_seen)
-                return (True, self.seen[name], since)
+                return (True, self.seen[name][1], since)
             else:
                 return (False, None, None)
 
@@ -262,14 +265,17 @@ class Bot(object):
         return
 
 
-    def handleCommand(self, text):
-        words = self.preprocessText(text).split()
-        try:
-            return self.commands[words[0]](' '.join(words[1:]))
-        except:
-            print "No function called '"+words[0]+"' found"
-            return False
+    def handleCommand(self, msg):
+        cmd = str(self.preprocessText(msg["text"]).split()[0])
 
+        if cmd in self.commands:
+            try:
+                print GREEN,"Running command '"+cmd+"'"+ENDC
+                return self.commands[cmd](msg)
+            except:
+                print "Error while calling function called '"+cmd+"'"
+                return False
+        return False
 
 
     def run(self):
