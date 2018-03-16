@@ -214,7 +214,7 @@ class SlackBot(base_chatbot.Bot):
 
         reply = ""
         if not hasBeenSeen:
-            reply = "I haven't seen" + nick
+            reply = "I haven't seen " + nick
         else:
             reply = nick+" was last seen "+howLong+" ago, when they said '"+whatSaid+"'"
 
